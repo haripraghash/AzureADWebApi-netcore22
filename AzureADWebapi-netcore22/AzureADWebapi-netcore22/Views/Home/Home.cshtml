@@ -1,0 +1,162 @@
+﻿@*
+    For more information on enabling MVC for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
+*@
+@{
+}
+
+<head>
+    <style>
+        #authError {
+            color: red;
+        }
+
+        div {
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
+
+        #apiPath {
+            width: 472px;
+        }
+
+        #input {
+            width: 500px;
+        }
+
+        #result, #apiError {
+            width: 100%;
+            font-family: "Lucida Console", Monaco, monospace
+        }
+
+        #apiError {
+            color: red;
+        }
+    </style>
+</head>
+
+<h1>AAD API</h1>
+
+<div>
+    <span id="username"></span>
+    <button id="signIn" onclick="signIn()">Sign in</button>
+    <button id="signOut" onclick="signOut()">Sign out</button>
+</div>
+
+<div id="userRolesOuter">
+    <span>User roles:</span>
+    <span id="userRoles"></span>
+</div>
+
+
+
+<div id="authError"></div>
+
+<div>
+    <span>api/</span>
+    <input type="text" id="apiPath" value="foo" />
+</div>
+<div><textarea id="input" rows="20"></textarea></div>
+<div>
+    <button onclick="makeRequest('GET')">GET</button>
+    <button onclick="makeRequest('POST')">POST</button>
+    <button onclick="makeRequest('PUT')">PUT</button>
+    <button onclick="makeRequest('DELETE')">DELETE   </button>
+</div>
+
+<div id="apiError"></div>
+<pre id="result"></pre>
+
+
+<script src="https://secure.aadcdn.microsoftonline-p.com/lib/1.0.15/js/adal.min.js"></script>
+<script>
+
+    // Enter Global Config Values & Instantiate ADAL AuthenticationContext
+    window.config = {
+        instance: 'https://login.microsoftonline.com/',
+        tenant: '@Model.TenantId',
+        clientId: '@Model.ClientId',
+        postLogoutRedirectUri: window.location.origin,
+        cacheLocation: 'localStorage'
+    };
+    var authContext = new AuthenticationContext(config);
+
+    // Check For & Handle Redirect From AAD After Login
+    var isCallback = authContext.isCallback(window.location.hash);
+    authContext.handleWindowCallback();
+    document.getElementById('authError').textContent = authContext.getLoginError();
+
+    if (isCallback && !authContext.getLoginError()) {
+        window.location = authContext._getItem(authContext.CONSTANTS.STORAGE.LOGIN_REQUEST);
+    }
+
+    // Check Login Status, Update UI
+    var user = authContext.getCachedUser();
+    if (user) {
+        document.getElementById('username').textContent = user.userName;
+        document.getElementById('userRoles').textContent = user.profile.roles.join(", ");
+        document.getElementById('signIn').setAttribute('hidden', 'hidden');
+    } else {
+        document.getElementById('username').textContent = '';
+        document.getElementById('signOut').setAttribute('hidden', 'hidden');
+        document.getElementById('userRolesOuter').setAttribute('hidden', 'hidden');
+    }
+
+    function signIn() {
+        authContext.login();
+    }
+
+    function signOut() {
+        authContext.logOut();
+    }
+
+    function makeRequest(verb) {
+
+        document.getElementById('apiError').textContent = "";
+        document.getElementById('result').textContent = "Loading...";
+
+        // Acquire Token for Backend
+        authContext.acquireToken(authContext.config.clientId, function (error, token) {
+
+            // Handle ADAL Error
+            if (error || !token) {
+                document.getElementById('authError').textContent = 'ADAL Error Occurred: ' + error;
+                return;
+            }
+
+            var path = 'api/' + document.getElementById('apiPath').value
+
+            var xhr = new XMLHttpRequest();
+            xhr.open(verb, path);
+            xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onload = function () {
+                if (xhr.status === 202) {
+                    document.getElementById('apiError').textContent = "";
+                    document.getElementById('result').textContent = "Operation-Location: " + xhr.getResponseHeader("Operation-Location");
+                }
+                if (xhr.status === 204) {
+                    document.getElementById('apiError').textContent = "";
+                    document.getElementById('result').textContent = "Request succeeded. No content.";
+                }
+                else if (xhr.status >= 200 && xhr.status < 300) {
+                    document.getElementById('apiError').textContent = "";
+                    document.getElementById('result').textContent = JSON.stringify(JSON.parse(xhr.responseText), null, "\t");
+                }
+                else {
+                    document.getElementById('result').textContent = "";
+                    document.getElementById('apiError').textContent = 'Request failed. Returned status of ' + xhr.status;
+                }
+            };
+
+            if (verb === "POST" || verb === "PUT") {
+                var input = document.getElementById('input').value;
+                xhr.send(input);
+            }
+            else {
+                xhr.send();
+            }
+        });
+
+    }
+
+</script>
